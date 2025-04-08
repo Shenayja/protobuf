@@ -2837,8 +2837,7 @@ bool DescriptorPool::TryFindSymbolInFallbackDatabase(
 
   if (tables_->known_bad_symbols_.contains(name)) return false;
 
-  std::string name_string(name);
-  auto& file_proto = deferred_validation.CreateProto();
+  FileDescriptorProto* file_proto;
   if (  // We skip looking in the fallback database if the name is a sub-symbol
         // of any descriptor that already exists in the descriptor pool (except
         // for package descriptors).  This is valid because all symbols except
@@ -2858,16 +2857,21 @@ bool DescriptorPool::TryFindSymbolInFallbackDatabase(
       IsSubSymbolOfBuiltType(name)
 
       // Look up file containing this symbol in fallback database.
-      || !fallback_database_->FindFileContainingSymbol(name_string, &file_proto)
+      || !fallback_database_->FindFileContainingSymbol(
+             name,
+             [&]() -> auto& {
+               file_proto = &deferred_validation.CreateProto();
+               return *file_proto;
+             })
 
       // Check if we've already built this file. If so, it apparently doesn't
       // contain the symbol we're looking for.  Some DescriptorDatabases
       // return false positives.
-      || tables_->FindFile(file_proto.name()) != nullptr
+      || tables_->FindFile(file_proto->name()) != nullptr
 
       // Build the file.
-      || BuildFileFromDatabase(file_proto, deferred_validation) == nullptr) {
-    tables_->known_bad_symbols_.insert(std::move(name_string));
+      || BuildFileFromDatabase(*file_proto, deferred_validation) == nullptr) {
+    tables_->known_bad_symbols_.emplace(name);
     return false;
   }
 

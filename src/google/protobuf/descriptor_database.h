@@ -79,6 +79,15 @@ class PROTOBUF_EXPORT DescriptorDatabase {
                                         FileDescriptorProto* PROTOBUF_NONNULL
                                             output) = 0;
 
+  // Similar to `FindFileContainingSymbol` above but implementations can
+  // optimize for misses by not constructing the output FileDescriptorProto
+  // unless they need to.
+  // The default implentation will fallback to the above API.
+  // `output_creator` will be called at most once.
+  virtual bool FindFileContainingSymbol(
+      absl::string_view symbol_name,
+      absl::FunctionRef<FileDescriptorProto&()> output_creator);
+
   // Find the file which defines an extension extending the given message type
   // with the given field number.  If found, fills in *output and returns true,
   // otherwise returns false and leaves *output undefined.  containing_type
@@ -318,6 +327,9 @@ class PROTOBUF_EXPORT EncodedDescriptorDatabase : public DescriptorDatabase {
   bool FindFileContainingSymbol(StringViewArg symbol_name,
                                 FileDescriptorProto* PROTOBUF_NONNULL
                                     output) override;
+  bool FindFileContainingSymbol(
+      absl::string_view symbol_name,
+      absl::FunctionRef<FileDescriptorProto&()> output_creator) override;
   bool FindFileContainingExtension(
       StringViewArg containing_type, int field_number,
       FileDescriptorProto* PROTOBUF_NONNULL output) override;

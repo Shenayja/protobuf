@@ -30,6 +30,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
+#include "absl/strings/strip.h"
 #include "google/protobuf/descriptor.pb.h"
 #include "google/protobuf/io/coded_stream.h"
 #include "google/protobuf/parse_context.h"
@@ -108,6 +109,13 @@ bool DescriptorDatabase::FindAllMessageNames(
         RecordMessageNames(file_proto, set);
       },
       output);
+}
+
+bool DescriptorDatabase::FindFileContainingSymbol(
+    absl::string_view symbol_name,
+    absl::FunctionRef<FileDescriptorProto&()> output_creator) {
+  return FindFileContainingSymbol({symbol_name.data(), symbol_name.size()},
+                                  &output_creator());
 }
 
 // ===================================================================
@@ -492,6 +500,18 @@ class EncodedDescriptorDatabase::DescriptorIndex {
       auto p = package(index);
       return absl::StrCat(p, p.empty() ? "" : ".", symbol(index));
     }
+
+    bool IsSubSymbolOf(const DescriptorIndex& index,
+                       absl::string_view super_symbol) const {
+      const auto consume_part = [&](absl::string_view part) {
+        if (!absl::ConsumePrefix(&super_symbol, part)) return false;
+        return super_symbol.empty() || absl::ConsumePrefix(&super_symbol, ".");
+      };
+      if (auto p = package(index); !p.empty()) {
+        if (!consume_part(p)) return false;
+      }
+      return consume_part(symbol(index));
+    }
   };
 
   struct SymbolCompare {
@@ -590,6 +610,14 @@ bool EncodedDescriptorDatabase::FindFileByName(
 bool EncodedDescriptorDatabase::FindFileContainingSymbol(
     StringViewArg symbol_name, FileDescriptorProto* PROTOBUF_NONNULL output) {
   return MaybeParse(index_->FindSymbol(symbol_name), output);
+}
+
+bool EncodedDescriptorDatabase::FindFileContainingSymbol(
+    absl::string_view symbol_name,
+    absl::FunctionRef<FileDescriptorProto&()> output_creator) {
+  auto symbol = index_->FindSymbol(symbol_name);
+  if (symbol.first == nullptr) return false;
+  return MaybeParse(symbol, &output_creator());
 }
 
 bool EncodedDescriptorDatabase::FindNameOfFileContainingSymbol(
@@ -793,8 +821,7 @@ EncodedDescriptorDatabase::DescriptorIndex::FindSymbolOnlyFlat(
   auto iter =
       FindLastLessOrEqual(&by_symbol_flat_, name, by_symbol_.key_comp());
 
-  return iter != by_symbol_flat_.end() &&
-                 IsSubSymbol(iter->AsString(*this), name)
+  return iter != by_symbol_flat_.end() && iter->IsSubSymbolOf(*this, name)
              ? all_values_[iter->data_offset].value()
              : Value();
 }
